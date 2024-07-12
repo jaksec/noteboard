@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import font, messagebox
 from PIL import Image, ImageTk
 import json
+import subprocess
+import os
 
 # initial tk window
 w = tk.Tk()
@@ -81,7 +83,7 @@ class AnimatedGifLabel(tk.Label):
     def display_frame(self):
         self.config(image=self.frames[self.current_frame])
         self.current_frame = (self.current_frame + 1) % len(self.frames)
-        self.after(20, self.display_frame)  # Adjust the delay for animation
+        self.after(50, self.display_frame)  # Adjust the delay for animation
 
     def reset_animation(self):
         self.current_frame = 0
@@ -90,12 +92,29 @@ class AnimatedGifLabel(tk.Label):
 def show_frame(frame):
     frame.tkraise()
 
+back_end_process = None
 def show_animation():
+    global back_end_process
     gif_label.reset_animation()
     gif_label.place(x=303, y=406)
+    if os.name == 'nt':
+        back_end_process = subprocess.Popen(
+            ["python", "back_end.py"],
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+    else:
+        back_end_process = subprocess.Popen(["python", "back_end.py"])
 
 def hide_gif():
+    global back_end_process
     gif_label.place_forget()
+    if back_end_process:
+        back_end_process.terminate()
+        try:
+            back_end_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            back_end_process.kill()
+        back_end_process = None
 
 def back_b_commands():
     key_label.config(text="")
@@ -103,11 +122,17 @@ def back_b_commands():
 
 # Function to handle mapping mouse actions
 def map_mouse_action():
+    if back_end_process:
+        hide_gif()
     note = selected_note.get()
     action = selected_mouse_action.get()
-    key_label.place(y=400, x=330)
-    key_label.config(text=f"Mapped: {note} -> {action}")
-    update_control_mapping(note, action)
+    if control_mappings.get(note) == action:
+        key_label.place(y=400, x=290)
+        key_label.config(text=f"{action} is already mapped to {note}.")
+    else:
+        key_label.place(y=400, x=330)
+        key_label.config(text=f"Mapped: {note} -> {action}")
+        update_control_mapping(note, action)
 
 # Function to display current mappings
 def update_mappings_display():
@@ -125,12 +150,14 @@ def map_note_to_key():
     
     # Capture key press event and map it to the selected note
     def on_key_press(event):
+        if back_end_process:
+            hide_gif()
         key = event.keysym.upper()
         if control_mappings.get(note) == key:
-            key_label.place(y=400, x=330)
+            key_label.place(y=400, x=300)
             key_label.config(text=f"{key} is already mapped to {note}.")
         else:
-            key_label.place(y=400, x=365)
+            key_label.place(y=400, x=350)
             key_label.config(text=f"Mapped: {note} -> {key}")
             update_control_mapping(note, key)
         w.focus_set()  # Return focus to the main window after mapping
@@ -138,11 +165,18 @@ def map_note_to_key():
     
     w.bind("<Key>", on_key_press)
 
-def unbind_key(note):
-    key_label.place(y=400, x=385)
-    key_label.config(text=f"{note} unbinded.")
-    control_mappings[note] = None
-    update_mappings_display()
+def unbind_button_key(note):
+    if back_end_process:
+        hide_gif()
+        
+    if control_mappings[note] == None:
+        key_label.place(y=400, x=350)
+        key_label.config(text=f"{note} is already unbound.")
+    else:
+        key_label.place(y=400, x=385)
+        key_label.config(text=f"{note} unbound.")
+        control_mappings[note] = None
+        update_mappings_display()
 
 # frames for application
 main_frame = tk.Frame(container, bg='lightblue')
@@ -150,11 +184,13 @@ control_frame = tk.Frame(container, bg='lightgreen')
 
 # image preprocessing
 gif_label = AnimatedGifLabel(main_frame, 'img/red-circle-blink.gif', 'lightblue')
+dancing_capybara = AnimatedGifLabel(main_frame, 'img/dancing_capybara2.gif', 'lightblue')
+dancing_capybara.place(x=150, y=50)
 
 # fonts and miscellaneous
 cool_font = font.Font(family="Comic Sans MS", size=26, weight="bold")
 other = font.Font(family="Arial", size=13)
-other1 = font.Font(family="Arial", size=13, weight="bold") #fix this
+other1 = font.Font(family="Arial", size=13, weight="bold")
 
 # main frame content
 welcome = tk.Label(main_frame, text="Welcome to Noteboard!", font=cool_font, bg='lightblue')
@@ -163,7 +199,7 @@ description = tk.Label(main_frame, text="A tool for translating music notes into
 description.pack(pady=40)
 copyrighted = tk.Label(main_frame, text="Copyright © 2024 Chris Jaksec. All rights reserved.", font=other, bg='lightblue')
 copyrighted.place(x=510, y=670)
-    # buttons in main frame
+# buttons in main frame
 control_b = tk.Button(main_frame, text="Controls", command=lambda: show_frame(control_frame))
 begin_b = tk.Button(main_frame, text="Start Recording", command=show_animation)
 end_b = tk.Button(main_frame, text="End", command=hide_gif)
@@ -173,30 +209,31 @@ key_label = tk.Label(control_frame, text="", font=other1, bg='lightgreen')
 
 # control frame content
 
-    # display for controls
+# display for controls
 mappings_label = tk.Label(control_frame, text="Current Mappings:", font=cool_font, bg='lightgreen')
 mappings_label.pack(pady=20)
 mappings_text = tk.Text(control_frame, width=40, height=10, font=other)
 mappings_text.pack()
 update_mappings_display()
-    # title
+# title & extra
 title = tk.Label(control_frame, text="Control Menu", font=cool_font, bg='lightgreen')
 title.pack(pady=40)
+warning = tk.Label(control_frame, text="Warning: Changing controls stops recording.", font=('Comic Sans MS', 12), bg='lightgreen', fg='red')
+warning.place(x=300, y=300)
 
-    # Dropdown menu for control mappings (notes)
+# Dropdown menu for control mappings (notes)
 notes = ["Note C", "Note D", "Note E", "Note F", "Note G", "Note A", "Note B"]
 selected_note = tk.StringVar(control_frame)
 selected_note.set(notes[0])  # Default to first note
 
-    # Drop down menu for mouse controls
-mouse_options = ["MOUSE_UP", "MOUSE_DOWN", "MOUSE_LEFT", "MOUSE_RIGHT"]
+# Drop down menu for mouse controls
+mouse_options = ["MOUSE_UP", "MOUSE_DOWN", "MOUSE_LEFT", "MOUSE_RIGHT", "MOUSE_CLICK"]
 selected_mouse_action = tk.StringVar(control_frame)
 selected_mouse_action.set(mouse_options[0])  # Default to first option
 
-
-    # buttons and drop downs
+# buttons and drop downs
 back_b = tk.Button(control_frame, text="Back", command=back_b_commands)
-unbind_button = tk.Button(control_frame, text="Unbind", command=lambda: unbind_key(selected_note.get()))
+unbind_button = tk.Button(control_frame, text="Unbind", command=lambda: unbind_button_key(selected_note.get()))
 note_dropdown = tk.OptionMenu(control_frame, selected_note, *notes)
 map_button = tk.Button(control_frame, text="Map Note to Key", command=map_note_to_key)
 map_mouse_button = tk.Button(control_frame, text="Map Note to Mouse Action", command=map_mouse_action)
@@ -222,6 +259,7 @@ show_frame(main_frame)
 
 def on_close():
     save_control_mappings()
+    hide_gif()
     w.destroy()
 
 # main
